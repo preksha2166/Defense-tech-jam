@@ -1,0 +1,14 @@
+# Cloudflare deploy config for TRUSTLINE: ABYSS
+#
+# Serves ./public, which deploy.sh populates with just the runtime files.
+# Pointing Cloudflare at the repo root instead would upload .git — i.e.
+# publish the entire commit history on a public URL. Don't do that.
+#
+#   npx wrangler login   # one-time, opens a browser
+#   ./deploy.sh          # stages ./public and publishes
+#
+name = "trustline-abyss"
+compatibility_date = "2026-09-19"
+
+[assets]
+directory = "./public"
