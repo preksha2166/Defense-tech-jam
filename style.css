@@ -584,7 +584,30 @@ h2{font-size:31px;letter-spacing:.16em;margin:0 0 16px;color:var(--cyan)}
   font-size:10px;letter-spacing:.2em;color:#5f8b9c;
   background:rgba(4,16,26,.6);border:1px solid rgba(120,200,220,.14);
   border-radius:20px;padding:6px 18px;white-space:nowrap;
+  transition:color .3s, border-color .3s, background .3s;
 }
+/* clue sweep done — the checkpoint has opened */
+#nh-objective.open{
+  color:#ffd9a0;border-color:rgba(240,169,76,.55);
+  background:rgba(40,24,6,.6);
+  box-shadow:0 0 18px rgba(240,169,76,.18);
+}
+
+/* ============================================================
+   SWITCH BANK — locked during transit
+   The four decisions are unavailable until the boat is on station,
+   so the bank dims and the cursor says so rather than the buttons
+   silently doing nothing.
+   ============================================================ */
+.switches.locked{ opacity:.34; filter:saturate(.35); }
+.switches.locked .sw{ cursor:not-allowed; }
+.switches.locked::after{
+  content:'◈  COLLECT ALL THREE CLUES, THEN REACH THE CHECKPOINT';
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11px;letter-spacing:.22em;
+  color:#8fd4ff;background:rgba(4,14,22,.55);pointer-events:none;
+}
+.switches{ position:relative; }
 
 /* In navigation mode the console is gone entirely — the reference layout
    keeps the water clear. The inside view is untouched. */
@@ -663,3 +686,368 @@ h2{font-size:31px;letter-spacing:.16em;margin:0 0 16px;color:var(--cyan)}
   text-shadow:0 0 12px rgba(240,169,76,.6)}
 #sensor-alert.clear{color:var(--green);background:rgba(8,40,26,.9);border:1px solid var(--green);
   text-shadow:0 0 12px rgba(87,217,154,.6)}
+
+
+/* ============================================================
+   CLUE CARD
+   Shown for a few seconds each time a clue beacon is scanned.
+   Deliberately at body level and above everything: in the
+   external view the cockpit is display:none, so anything
+   parented to the porthole would never be seen.
+   ============================================================ */
+#clue-card{
+  position:fixed; left:50%; bottom:13%; transform:translateX(-50%);
+  z-index:40; width:min(680px, 82vw); pointer-events:none;
+  font-family:var(--mono);
+  background:linear-gradient(180deg, rgba(42,27,6,.94), rgba(14,22,30,.94));
+  border:1px solid rgba(255,194,71,.55);
+  border-left:3px solid #ffc247;
+  border-radius:8px; padding:14px 18px 15px;
+  box-shadow:0 10px 40px rgba(0,0,0,.6), 0 0 26px rgba(255,194,71,.18);
+  animation:clueIn .32s cubic-bezier(.2,.9,.3,1.3);
+}
+#clue-card[hidden]{ display:none }
+#clue-card .cc-h{
+  display:flex; justify-content:space-between; align-items:center;
+  font-size:10px; letter-spacing:.24em; margin-bottom:8px;
+}
+#clue-card .cc-n{ color:#ffc247 }
+#clue-card .cc-tag{ color:#7fd6a0 }
+#clue-card .cc-body{
+  font-size:14px; line-height:1.5; color:#e8f2f6; letter-spacing:.01em;
+}
+@keyframes clueIn{
+  from{ opacity:0; transform:translate(-50%, 14px) scale(.97) }
+  to  { opacity:1; transform:translate(-50%, 0) scale(1) }
+}
+
+/* Transient notices in the external view. #clue-tick lives inside the
+   porthole, which navmode hides, so nav mode needs its own. */
+#nav-ping{
+  position:absolute; top:52px; left:50%; transform:translateX(-50%);
+  font-family:var(--mono); font-size:11px; letter-spacing:.2em;
+  color:#ffd08a; background:rgba(40,20,4,.82);
+  border:1px solid rgba(255,180,90,.45); border-radius:6px;
+  padding:8px 18px; white-space:nowrap; z-index:12;
+  box-shadow:0 0 22px rgba(255,170,70,.16);
+}
+#nav-ping[hidden]{ display:none }
+
+/* ============================================================
+   ATLAS AVATAR
+   Procedural SVG face in the CRT tag block and in the tutorial
+   card. Sized to the 190px tag column.
+   ============================================================ */
+.atlas-av{ flex:none; line-height:0; filter:drop-shadow(0 0 10px rgba(80,220,240,.20)) }
+.atlas-av svg{ display:block; transition:transform .08s linear }
+@keyframes atlasSpin{ to{ transform:rotate(360deg) } }
+
+/* the tag block now holds an avatar, so let it breathe */
+.crt-tag{ align-items:center; padding-top:0; gap:12px }
+
+/* voice toggle, tucked under the name */
+.atlas-voice{
+  margin-top:6px; font-family:var(--mono); font-size:7.5px; letter-spacing:.14em;
+  color:#4e8a72; background:none; border:1px solid #1d4a3a; border-radius:3px;
+  padding:3px 7px; cursor:pointer; transition:.15s;
+}
+.atlas-voice:hover{ color:#8bffc4; border-color:#2f7f60 }
+.atlas-voice.off{ color:#6b4750; border-color:#4a2630 }
+
+/* ============================================================
+   GUIDED TUTORIAL
+   Spotlight = four dimming panels around a hole, so the control
+   being described stays genuinely clickable underneath.
+   ============================================================ */
+#tut{ position:fixed; inset:0; z-index:200; font-family:var(--mono) }
+#tut[hidden]{ display:none }
+
+.tut-shade{
+  position:fixed; background:rgba(2,9,14,.80);
+  backdrop-filter:blur(1.5px); transition:all .28s cubic-bezier(.3,.8,.3,1);
+}
+.tut-ring{
+  position:fixed; border:2px solid #ffc247; border-radius:8px; pointer-events:none;
+  box-shadow:0 0 0 1px rgba(0,0,0,.6), 0 0 26px rgba(255,194,71,.45),
+             inset 0 0 18px rgba(255,194,71,.12);
+  transition:all .28s cubic-bezier(.3,.8,.3,1); opacity:0;
+  animation:tutRing 1.9s ease-in-out infinite;
+}
+@keyframes tutRing{ 50%{ box-shadow:0 0 0 1px rgba(0,0,0,.6), 0 0 40px rgba(255,194,71,.62),
+                                    inset 0 0 22px rgba(255,194,71,.2) } }
+
+.tut-card{
+  position:fixed; width:min(470px, 88vw);
+  background:linear-gradient(180deg, rgba(10,26,33,.98), rgba(5,16,21,.98));
+  border:1px solid #2f7f90; border-radius:9px; padding:16px 18px 14px;
+  box-shadow:0 18px 60px rgba(0,0,0,.75), 0 0 34px rgba(60,200,230,.14);
+}
+.tut-card.centred{ left:50% !important; top:50% !important; transform:translate(-50%,-50%) }
+.tut-card.pop{ animation:tutPop .3s cubic-bezier(.2,.9,.3,1.25) }
+@keyframes tutPop{ from{ opacity:0; transform:translateY(10px) scale(.985) } }
+.tut-card.centred.pop{ animation:tutPopC .3s cubic-bezier(.2,.9,.3,1.25) }
+@keyframes tutPopC{ from{ opacity:0; transform:translate(-50%,-46%) scale(.985) } }
+
+.tut-head{ display:flex; align-items:center; gap:11px; margin-bottom:11px }
+.tut-id{ flex:1; min-width:0 }
+.tut-name{ font-size:11px; letter-spacing:.26em; color:var(--cyan) }
+.tut-step{ font-size:7.5px; letter-spacing:.16em; color:#4e7686; margin-top:3px }
+.tut-skip{
+  font-family:var(--mono); font-size:8px; letter-spacing:.14em; color:#5a7f8c;
+  background:none; border:1px solid #23444f; border-radius:3px;
+  padding:5px 9px; cursor:pointer; transition:.15s; flex:none;
+}
+.tut-skip:hover{ color:#cfe9f2; border-color:#3d6c7c }
+
+.tut-title{
+  font-size:12px; letter-spacing:.2em; color:#ffc247; margin-bottom:8px;
+  text-shadow:0 0 14px rgba(255,194,71,.3);
+}
+.tut-body{
+  font-family:var(--sans, inherit); font-size:13px; line-height:1.62; color:#dceef5;
+  letter-spacing:.01em;
+}
+
+.tut-foot{ display:flex; align-items:center; justify-content:space-between;
+           margin-top:14px; gap:12px }
+.tut-dots{ display:flex; gap:4px; flex-wrap:wrap; max-width:55% }
+.tut-dots i{ width:5px; height:5px; border-radius:50%; background:#1d3d47; display:block }
+.tut-dots i.done{ background:#2f7f90 }
+.tut-dots i.on{ background:#ffc247; box-shadow:0 0 8px rgba(255,194,71,.7) }
+
+.tut-btns{ display:flex; gap:8px; flex:none }
+.tut-btns button{
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.16em; cursor:pointer;
+  padding:8px 15px; border-radius:4px; transition:.15s;
+  background:none; border:1px solid #23444f; color:#8fb6c4;
+}
+.tut-btns button:hover:not(:disabled){ color:#eaf7fb; border-color:#4b8497 }
+.tut-btns button:disabled{ opacity:.3; cursor:default }
+.tut-next{ border-color:#2f7f60 !important; color:#8bffc4 !important }
+.tut-next:hover{ background:rgba(60,220,140,.1) }
+
+/* replay link on the title screen */
+.tut-replay{
+  margin-top:12px; font-family:var(--mono); font-size:9px; letter-spacing:.16em;
+  color:#4e7686; background:none; border:none; cursor:pointer;
+  text-decoration:underline; text-underline-offset:4px; transition:.15s;
+}
+.tut-replay:hover{ color:#8fd4ff }
+
+/* While the tour is explaining the switch bank, show it live.
+   The tutorial runs during the transit phase, so .locked would otherwise
+   have it at 34% opacity under the "collect the clues" overlay — i.e. the
+   four controls being described would be the least readable thing on
+   screen at the exact moment they are the subject. */
+body.tut-open .switches.locked{ opacity:1; filter:none }
+body.tut-open .switches.locked::after{ display:none }
+body.tut-open .switches.locked .sw{ cursor:default }
+
+/* Same reasoning for anything else the tour points at that the game
+   happens to have dimmed for phase reasons. */
+body.tut-open .tut-lit{ opacity:1 !important; filter:none !important }
+
+/* ============================================================
+   SCARCE EVIDENCE
+   Unscanned clues are shown as absent data, not as text. The gap
+   in the observation panel IS the consequence of how you flew.
+   ============================================================ */
+.clues li.missing{
+  color:#5a6a72; font-style:italic; letter-spacing:.02em;
+  border-left:2px dashed #33454e; padding-left:9px; opacity:.75;
+}
+.clues li.missing::marker{ color:#33454e }
+
+/* scan power reads amber then red as it goes */
+.nres .r.scan .lbl{ color:#c79a4a }
+.nres .r.scan .v{ color:#ffc247 }
+.nres .r.scan .bar i{ background:#ffc247 }
+.nres .r.scan .v.warn, .nres .r.scan .bar i.warn{ color:#ff9f43; background:#ff9f43 }
+.nres .r.scan .v.crit, .nres .r.scan .bar i.crit{ color:#ff6b6b; background:#ff6b6b }
+
+/* what you never scanned, revealed on the outcome card */
+.outcome-missed{
+  margin:14px 0 4px; padding:11px 14px; text-align:left;
+  border-left:2px solid #5a6a72; background:rgba(90,106,114,.10);
+  border-radius:0 4px 4px 0;
+}
+.outcome-missed[hidden]{ display:none }
+.om-h{
+  font-family:var(--mono); font-size:9px; letter-spacing:.18em;
+  color:#8fa6b0; margin-bottom:7px;
+}
+.om-i{
+  font-size:12.5px; line-height:1.55; color:#aebfc7; margin-top:5px;
+  padding-left:11px; border-left:1px dashed #3b4d56;
+}
+
+/* ============================================================
+   TITLE KEY ART
+   Sits over the live 3D title scene. Capped by viewport height so
+   the BEGIN MISSION button is never pushed below the fold on a
+   short laptop screen — the one thing that must always be visible.
+   ============================================================ */
+.key-art{
+  /* width:auto + max-* so the frame hugs the artwork. Setting an explicit
+     width with object-fit:contain letterboxes the image inside a wider box
+     and the border then draws around the empty space, not the art. */
+  display:block; width:auto; height:auto;
+  max-width:min(880px, 86vw); max-height:52vh;
+  margin:6px auto 18px; border-radius:10px;
+  border:1px solid rgba(120,200,220,.22);
+  box-shadow:0 22px 70px rgba(0,0,0,.72), 0 0 60px rgba(40,150,200,.18);
+  animation:keyArtIn .9s cubic-bezier(.2,.85,.3,1) both;
+}
+@keyframes keyArtIn{
+  from{ opacity:0; transform:translateY(16px) scale(.985) }
+  to  { opacity:1; transform:none }
+}
+/* very short windows: shrink further rather than scroll */
+@media (max-height:620px){
+  .key-art{ max-height:40vh; margin:2px auto 12px }
+}
+
+/* the replay link belongs under the button, not beside it */
+.tut-replay{ display:block; margin-left:auto; margin-right:auto }
+
+/* ============================================================
+   INTRO FILM
+   Replaces the typed briefing. Always skippable: a demo that
+   cannot be skipped eats the five minutes you were given.
+   ============================================================ */
+.intro-wrap{
+  position:fixed; inset:0; z-index:30;
+  background:#02080c; display:flex; align-items:center; justify-content:center;
+}
+.intro-wrap[hidden]{ display:none }
+#intro-video{
+  width:100%; height:100%; object-fit:contain; background:#02080c;
+  display:block;
+}
+.intro-skip{
+  position:absolute; top:22px; right:26px; z-index:4;
+  font-family:var(--mono); font-size:11px; letter-spacing:.22em;
+  color:#cfe9f2; background:rgba(4,16,24,.72);
+  border:1px solid rgba(140,210,230,.45); border-radius:5px;
+  padding:10px 18px; cursor:pointer; transition:.16s;
+  backdrop-filter:blur(4px);
+}
+.intro-skip:hover{
+  color:#fff; border-color:#8fd4ff; background:rgba(20,60,80,.8);
+  box-shadow:0 0 22px rgba(90,200,240,.3);
+}
+.intro-hint{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  font-family:var(--mono); font-size:12px; letter-spacing:.2em; color:#8fd4ff;
+  background:rgba(4,16,24,.8); border:1px solid rgba(140,210,230,.4);
+  border-radius:6px; padding:14px 26px; cursor:pointer; z-index:5;
+  animation:pulse 1.8s infinite;
+}
+.intro-hint[hidden]{ display:none }
+/* thin progress line so the viewer knows how long is left */
+.intro-bar{
+  position:absolute; left:0; right:0; bottom:0; height:2px;
+  background:rgba(255,255,255,.08); z-index:4;
+}
+.intro-bar i{
+  display:block; height:100%; width:0;
+  background:linear-gradient(90deg,#2f7f90,#8fd4ff);
+  box-shadow:0 0 10px rgba(140,210,255,.6);
+}
+
+/* ============================================================
+   INTRO FILM
+   Replaces the typed briefing. Full-bleed, with a skip control
+   that is visible from the first frame -- a judge who has seen
+   it once must never be trapped in it.
+   ============================================================ */
+#screen-brief:has(#intro-wrap:not([hidden])){ padding:0 }
+
+.intro-wrap{ position:fixed; inset:0; background:#000; z-index:60 }
+.intro-wrap[hidden]{ display:none }
+
+#intro-video{
+  position:absolute; inset:0;
+  width:100%; height:100%; object-fit:contain;
+  background:#000; display:block;
+}
+
+.intro-skip{
+  position:absolute; top:22px; right:26px; z-index:3;
+  font-family:var(--mono); font-size:11px; letter-spacing:.22em;
+  color:#cfe9f2; background:rgba(6,18,26,.72);
+  border:1px solid rgba(140,210,230,.4); border-radius:5px;
+  padding:10px 18px; cursor:pointer; transition:.16s;
+  backdrop-filter:blur(4px);
+}
+.intro-skip:hover{
+  color:#fff; border-color:#8fd4ff; background:rgba(20,50,68,.85);
+  box-shadow:0 0 20px rgba(80,190,230,.3);
+}
+
+.intro-hint{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-family:var(--mono); font-size:13px; letter-spacing:.24em; color:#cfe9f2;
+  background:rgba(2,8,12,.55); cursor:pointer; z-index:2;
+  animation:pulse 2s infinite;
+}
+.intro-hint[hidden]{ display:none }
+
+/* thin progress line along the bottom, so the length is legible */
+.intro-bar{
+  position:absolute; left:0; right:0; bottom:0; height:2px;
+  background:rgba(255,255,255,.10); z-index:3;
+}
+.intro-bar i{
+  display:block; height:100%; width:0;
+  background:linear-gradient(90deg,#2f7f90,#8fd4ff);
+  box-shadow:0 0 10px rgba(140,210,240,.6);
+}
+
+/* ============================================================
+   INDICATOR BANK
+   Three states, three rhythms, so the bank is readable at a
+   glance without reading any labels:
+     on    steady green, slow breath
+     warn  amber, ~1.4s blink
+     crit  red, ~0.55s blink with a hard edge
+   The tick that accompanies a blink is fired from game.js, not
+   from CSS, so sound and light stay in step.
+   ============================================================ */
+.lamps{ flex-wrap:wrap; row-gap:4px }
+
+.lamp i{ transition:background .2s, box-shadow .2s }
+
+/* steady, alive */
+.lamp.on i{
+  background:var(--green);
+  box-shadow:0 0 10px var(--green), inset 0 0 3px #fff;
+  animation:lampBreath 3.2s ease-in-out infinite;
+}
+@keyframes lampBreath{ 50%{ opacity:.68 } }
+
+/* attention */
+.lamp.warn i{
+  background:var(--amber);
+  box-shadow:0 0 12px var(--amber), inset 0 0 3px #ffe9c4;
+  animation:lampBlink 1.4s steps(1,end) infinite;
+}
+@keyframes lampBlink{ 0%,55%{ opacity:1 } 56%,100%{ opacity:.18 } }
+
+/* trouble */
+.lamp.crit i{
+  background:var(--red, #ef5f6b);
+  box-shadow:0 0 16px #ef5f6b, inset 0 0 3px #ffd0d4;
+  animation:lampCrit .55s steps(1,end) infinite;
+}
+@keyframes lampCrit{ 0%,48%{ opacity:1 } 49%,100%{ opacity:.12 } }
+.lamp.crit span{ color:#e08f96 }
+
+/* offline */
+.lamp.dead i{
+  background:#3a1f22; box-shadow:inset 0 0 4px #000; animation:none;
+}
+
+/* the whole bank flares once when any lamp changes state */
+.lamps.flare{ animation:bankFlare .5s ease-out }
+@keyframes bankFlare{ 0%{ filter:brightness(1.9) } 100%{ filter:none } }

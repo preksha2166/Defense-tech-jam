@@ -1,0 +1,18 @@
+# staging output — deploy.sh rebuilds this every run
+/public/
+
+# large source media kept locally, not shipped
+/video/*.original.mp4
+/video/*.small.mp4
+
+# editor / OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+.vscode/
+.idea/
+
+# scratch
+_pdfpage*.png
+*.log

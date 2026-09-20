@@ -20,9 +20,18 @@
 <section class="screen active" id="screen-title">
   <div class="title-wrap">
     <div class="eyebrow">DEFENSE TECH JAM · CHALLENGE 02</div>
-    <h1>TRUSTLINE<span class="colon">:</span> ABYSS</h1>
-    <p class="tagline">Trust your teammate. Question your teammate.<br>Know when human judgment must lead.</p>
+    <!-- Key art. The typed title below stays in the markup as a fallback:
+         if the image is missing or blocked, onerror swaps it back in, so
+         the game still opens correctly from a USB stick. -->
+    <img class="key-art" id="key-art" src="art/key-art.jpg"
+         alt="TRUSTLINE: ABYSS — Calibrate. Question. Decide."
+         onerror="this.remove(); document.getElementById('title-text').hidden = false;">
+    <div id="title-text" hidden>
+      <h1>TRUSTLINE<span class="colon">:</span> ABYSS</h1>
+      <p class="tagline">Trust your teammate. Question your teammate.<br>Know when human judgment must lead.</p>
+    </div>
     <button class="primary" id="btn-begin">BEGIN MISSION</button>
+    <button class="tut-replay" id="btn-tutorial" type="button">Replay the tutorial</button>
     <p class="keyhint">1&ndash;4 decide &middot; V external view &middot; WASD drive &middot; M mute &middot; P graphics &middot; Shift+1&ndash;0 jump</p>
     <p class="disclaimer">Fictional synthetic training prototype. Not an operational decision-support system.</p>
   </div>
@@ -30,7 +39,20 @@
 
 <!-- ================= BRIEFING ================= -->
 <section class="screen" id="screen-brief">
-  <div class="brief-wrap">
+
+  <!-- Intro film. The typed briefing below is kept as a fallback: if the
+       video cannot load or cannot decode, onerror reveals it and the game
+       plays exactly as it did before. A demo must never dead-end on an
+       asset that failed to ship. -->
+  <div class="intro-wrap" id="intro-wrap">
+    <video id="intro-video" playsinline preload="auto"
+           src="video/atlas-intro.mp4"></video>
+    <button class="intro-skip" id="btn-skip-intro" type="button">SKIP &rsaquo;&rsaquo;</button>
+    <div class="intro-hint" id="intro-hint" hidden>CLICK TO PLAY WITH SOUND</div>
+    <div class="intro-bar"><i id="intro-progress"></i></div>
+  </div>
+
+  <div class="brief-wrap" id="brief-text" hidden>
     <div class="brief-line" data-delay="0">&gt; STORM EVENT — HULL INTEGRITY NOMINAL, ROUTE LOST</div>
     <div class="brief-line" data-delay="1">&gt; NAVIGATION DEGRADED · COMMS OFFLINE</div>
     <div class="brief-line" data-delay="2">&gt; CREW AVAILABILITY REDUCED</div>
@@ -56,6 +78,9 @@
       <div class="lamp" id="lamp-atlas"><i></i><span>ATLAS</span></div>
       <div class="lamp" id="lamp-drone"><i></i><span>DRONE</span></div>
       <div class="lamp warn" id="lamp-hull"><i></i><span>HULL</span></div>
+      <div class="lamp" id="lamp-scan"><i></i><span>SCAN</span></div>
+      <div class="lamp" id="lamp-evid"><i></i><span>EVIDENCE</span></div>
+      <div class="lamp" id="lamp-link"><i></i><span>LINK</span></div>
     </div>
     <div class="readouts">
       <div class="ro"><span class="k">CALIBRATION</span><span class="v" id="stat-cal">50</span></div>
@@ -119,10 +144,11 @@
   <!-- ---------- ATLAS CRT ---------- -->
   <div class="crt">
     <div class="crt-tag">
-      <div class="atlas-dot"></div>
+      <div class="atlas-av" id="atlas-av"></div>
       <div>
         <div class="atlas-name">ATLAS</div>
         <div class="atlas-sub">AUTONOMOUS TACTICAL &amp;<br>LOGISTICS ASSISTANCE SYSTEM</div>
+        <button class="atlas-voice" id="atlas-voice" type="button">&#9679; VOICE ON</button>
       </div>
     </div>
     <div class="crt-screen">
@@ -152,6 +178,7 @@
       <div class="outcome-verdict" id="outcome-verdict"></div>
       <div class="outcome-truth" id="outcome-truth"></div>
       <div class="outcome-note" id="outcome-note"></div>
+      <div class="outcome-missed" id="outcome-missed" hidden></div>
       <div class="outcome-delta" id="outcome-delta"></div>
       <button class="primary" id="btn-next">CONTINUE</button>
     </div>
@@ -170,7 +197,7 @@
 
   <div class="nh tr"><div class="ncard cp">
     <div>
-      <div class="cl">NEXT WAYPOINT</div>
+      <div class="cl" id="nh-target-label">NEXT WAYPOINT</div>
       <div class="cd"><span id="nh-dist">0</span><span class="unit"> M</span></div>
       <div class="cv" id="nh-vert">&#9679; level</div>
       <div class="cc" id="nh-clues">&#9670; CLUES 0/4</div>
@@ -182,12 +209,22 @@
     <div class="r"><div class="lbl">HULL</div><div class="v" id="nh-hull">100</div><div class="bar"><i id="nhb-hull"></i></div></div>
     <div class="r"><div class="lbl">DRONE</div><div class="v" id="nh-drone">100</div><div class="bar"><i id="nhb-drone"></i></div></div>
     <div class="r"><div class="lbl">CALIBRATION</div><div class="v" id="nh-cal">50</div><div class="bar"><i id="nhb-cal"></i></div></div>
+    <div class="r scan"><div class="lbl">SCAN PWR</div><div class="v" id="nh-scan">100</div><div class="bar"><i id="nhb-scan"></i></div></div>
     <div class="r"><div class="lbl">ELAPSED</div><div class="v" id="nh-time">00:00</div></div>
   </div></div></div>
 
   <div class="nh bc"><div class="nhint"><b>Space</b> thrust &middot; <b>&larr; &rarr;</b> turn &middot; <b>&uarr; &darr;</b> climb/dive &middot; <b>V</b> cockpit &middot; <b>C</b> autopilot</div></div>
 
   <div id="nh-objective">REACH THE WAYPOINT &middot; SCAN CLUE MARKERS EN ROUTE</div>
+  <div id="nav-ping" hidden></div>
+</div>
+
+<!-- Clue readout. Lives at body level, not inside the porthole, so it is
+     still on screen in the external navigation view where the whole
+     cockpit (porthole included) is hidden. -->
+<div id="clue-card" hidden>
+  <div class="cc-h"><span class="cc-n">CLUE 1 / 3</span><span class="cc-tag">LOGGED</span></div>
+  <div class="cc-body"></div>
 </div>
 
 <!-- ================= DEBRIEF ================= -->
@@ -212,6 +249,8 @@
 <script src="audio.js"></script>
 <script src="vendor/three.min.js"></script>
 <script src="noise.js"></script>
+<script src="post.js"></script>
+<script src="atlas.js"></script>
 <script src="flora.js"></script>
 <script src="creatures.js"></script>
 <script src="sub.js"></script>
@@ -219,6 +258,7 @@
 <script src="env.js"></script>
 <script src="cockpit.js"></script>
 <script src="scenarios.js"></script>
+<script src="tutorial.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

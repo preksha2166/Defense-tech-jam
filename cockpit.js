@@ -86,7 +86,8 @@ const SONAR = (() => {
     // scope can actually be steered by.
     const PALETTE = {
       waypoint: [255, 190, 90],
-      clue:     [120, 230, 255],
+      clue:     [255, 194,  71],   // the live one — amber, same as its beacon
+      cluedim:  [ 52, 104, 126],   // known about, not your target yet
       found:    [110, 235, 165],
       sensor:   [170, 255, 205]
     };

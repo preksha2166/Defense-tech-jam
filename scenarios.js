@@ -32,9 +32,8 @@ const SCENARIOS = [
     sensors: { SONAR: 92, THERMAL: 84, PRESSURE: 88, CURRENT: 86, NAV: 90 },
     clues: [
       "Sonar return is strong, hard-edged and completely static.",
-      "Pressure nominal. No disturbance in the water column.",
-      "Current nominal. The contact is not moving water around it.",
-      "Thermal nominal. No heat signature."
+      "Pressure and current both nominal. Nothing is disturbing the water column.",
+      "Thermal nominal. No heat signature of any kind."
     ],
     truth: "rock_formation",
     atlas: {
@@ -63,8 +62,7 @@ const SCENARIOS = [
     clues: [
       "Current reading well above safe transit threshold.",
       "Sonar shows the channel itself is clear of obstruction.",
-      "Pressure stable. Navigation stable.",
-      "Hull vibration increasing as we approach the mouth."
+      "Pressure and navigation stable, but hull vibration is climbing as we near the mouth."
     ],
     truth: "unsafe_current",
     atlas: {
@@ -92,8 +90,7 @@ const SCENARIOS = [
     sensors: { SONAR: 90, THERMAL: 86, PRESSURE: 89, CURRENT: 88, NAV: 94 },
     clues: [
       "Route A: sonar clear across the full sweep.",
-      "Current low and steady along the whole approach.",
-      "Pressure stable. No gradient anomalies.",
+      "Current low and steady. Pressure stable, with no gradient anomalies.",
       "Navigation confidence 94% — the chart and the sensors agree."
     ],
     truth: "route_a_clear",
@@ -125,8 +122,7 @@ const SCENARIOS = [
     clues: [
       "Sonar: large object, hard edges, completely static.",
       "Thermal: flat. No heat signature of any kind.",
-      "Current: undisturbed. The object is not moving water.",
-      "Nothing about this contact is behaving like an active hazard."
+      "Current: undisturbed — nothing about this contact is behaving like an active hazard."
     ],
     truth: "abandoned_structure",
     atlas: {
@@ -153,10 +149,9 @@ const SCENARIOS = [
     brief: "Nothing on sonar. ATLAS reads the route as navigable. The other instruments disagree.",
     sensors: { SONAR: 83, THERMAL: 79, PRESSURE: 91, CURRENT: 87, NAV: 64 },
     clues: [
-      "Sonar: clear. No returns at all along the approach.",
-      "Pressure: climbing steadily and not in step with depth.",
-      "Current: unstable, shifting bearing every few seconds.",
-      "Thermal: nominal — but thermal would not see this either."
+      "Sonar: clear, no returns along the approach. Thermal nominal — but neither instrument would see this.",
+      "Pressure: climbing steadily, and not in step with depth.",
+      "Current: unstable, shifting bearing every few seconds."
     ],
     truth: "subsurface_collapse",
     atlas: {
@@ -184,8 +179,7 @@ const SCENARIOS = [
     sensors: { SONAR: 58, THERMAL: 49, PRESSURE: 81, CURRENT: 46, NAV: 70 },
     clues: [
       "Sonar: possible obstruction, but returns are inconsistent between sweeps.",
-      "Current: unstable, and the sensor itself is degraded to 46%.",
-      "Thermal: inconclusive — reading quality too poor to call.",
+      "Current unstable and degraded to 46%. Thermal inconclusive — reading quality too poor to call.",
       "Pressure: normal, and it is the one instrument still healthy."
     ],
     truth: "unstable_terrain",
@@ -217,8 +211,7 @@ const SCENARIOS = [
     clues: [
       "Pressure: rising rapidly and irregularly. Not a depth change.",
       "Current: strong and building along the same bearing.",
-      "Thermal: slight anomaly, consistent with a vent field.",
-      "Sonar: normal — but sonar would not see superheated discharge."
+      "Thermal: anomaly consistent with a vent field. Sonar normal — but sonar cannot see superheated discharge."
     ],
     truth: "vent_field",
     atlas: {
@@ -247,8 +240,7 @@ const SCENARIOS = [
     clues: [
       "Sonar: large anomaly, strong return.",
       "Thermal: completely normal, and the sensor is healthy at 85%.",
-      "Current: normal and undisturbed.",
-      "Pressure: normal. Three healthy sensors see nothing wrong."
+      "Current and pressure both normal. Three healthy sensors see nothing wrong."
     ],
     truth: "sunken_vessel",
     atlas: {
@@ -276,9 +268,8 @@ const SCENARIOS = [
     sensors: { SONAR: 62, THERMAL: 64, PRESSURE: 86, CURRENT: 83, NAV: 58 },
     clues: [
       "Sonar: slight anomaly, right at the edge of resolution.",
-      "Pressure: increasing steadily.",
-      "Current: unstable and worsening.",
-      "Thermal: slight anomaly on the same bearing as the sonar return."
+      "Thermal: slight anomaly on the same bearing as the sonar return.",
+      "Pressure increasing steadily, current unstable and worsening — four weak channels, one direction."
     ],
     truth: "environmental_hazard",
     atlas: {
@@ -307,10 +298,8 @@ const SCENARIOS = [
     brief: "Last passage before the safe zone. Nothing here resolves cleanly, and your resources are nearly gone.",
     sensors: { SONAR: 57, THERMAL: 52, PRESSURE: 74, CURRENT: 48, NAV: 68 },
     clues: [
-      "Sonar: possible obstruction on Route A. Returns inconsistent.",
-      "Current: unstable, and the sensor is degraded to 48%.",
-      "Thermal: inconclusive.",
-      "Navigation: 68% — the chart is post-storm and may be stale.",
+      "Sonar: possible obstruction on Route A, returns inconsistent. Thermal inconclusive.",
+      "Current unstable and degraded to 48%. Navigation 68% — the chart is post-storm and may be stale.",
       "Route B is longer. Time and drone power are both nearly spent."
     ],
     truth: "route_b_safe",

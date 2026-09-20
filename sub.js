@@ -21,11 +21,11 @@ function build(lampColor){
   rig.rotation.y = Math.PI;
   group.add(rig);
 
-  const steel = new THREE.MeshStandardMaterial({ color: 0x5c6e78, roughness: .72, metalness: .35,
-                                                emissive: 0x0e1c24, emissiveIntensity: 1 });
-  const dark  = new THREE.MeshStandardMaterial({ color: 0x33424b, roughness: .85, metalness: .25,
-                                                emissive: 0x0a141a, emissiveIntensity: 1 });
-  const rust  = new THREE.MeshStandardMaterial({ color: 0x6d4326, roughness: .95, metalness: .1 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x3a4852, roughness: .58, metalness: .52,
+                                                emissive: 0x070f14, emissiveIntensity: 1 });
+  const dark  = new THREE.MeshStandardMaterial({ color: 0x1e272e, roughness: .85, metalness: .3,
+                                                emissive: 0x050a0e, emissiveIntensity: 1 });
+  const rust  = new THREE.MeshStandardMaterial({ color: 0x4a2d19, roughness: .95, metalness: .1 });
 
   /* ---- pressure hull: cylinder capped by a nose cone and a taper ---- */
   const body = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 7.2, 24), steel);
@@ -108,11 +108,11 @@ function build(lampColor){
 
   /* ---- forward lamps ---- */
   const mk = (x) => {
-    const l = new THREE.SpotLight(lampColor, 3.4, 130, Math.PI / 5.2, .6, 2.0);
+    const l = new THREE.SpotLight(lampColor, 3.4, 150, Math.PI / 4.6, .55, 2.0);
     l.position.set(x, -.3, 3.4);
     // target sits beyond the bow in rig space (+Z); the rig's 180deg flip
     // then aims it along the boat's -Z direction of travel
-    l.target.position.set(x * 1.6, -3, 60);
+    l.target.position.set(x * 1.6, -14, 60);
     rig.add(l, l.target);
 
     const hous = new THREE.Mesh(new THREE.CylinderGeometry(.3, .34, .4, 10), dark);
@@ -122,15 +122,46 @@ function build(lampColor){
                                 new THREE.MeshBasicMaterial({ color: 0xfff0cc }));
     lens.position.set(x, -.3, 3.72); rig.add(lens);
 
-    // visible beam cone
+    /* Visible beam cone.
+       A plain additive cone shell draws as a hard-edged wedge: the shell is
+       two constant layers everywhere and goes tangent at the silhouette, so
+       the one place it should disappear is the one place it is brightest.
+       This shader does the opposite — fades out at grazing angles and dims
+       along the cone — which is what reads as light in water rather than a
+       triangle stuck to the bow. */
     const bg = new THREE.ConeGeometry(11, 66, 22, 1, true);
-    bg.translate(0, -33, 0); bg.rotateX(-Math.PI / 2);
-    const bm = new THREE.MeshBasicMaterial({
-      color: lampColor, transparent: true, opacity: .06,
-      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+    bg.translate(0, -33, 0); bg.rotateX(-Math.PI / 2);   // apex at z=0, mouth at z=66
+    const bm = new THREE.ShaderMaterial({
+      uniforms: {
+        uColor:   { value: new THREE.Color(lampColor) },
+        uOpacity: { value: .06 }
+      },
+      vertexShader: `
+        varying vec3 vN; varying vec3 vView; varying float vT;
+        void main(){
+          vN = normalize(normalMatrix * normal);
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vView = -mv.xyz;
+          vT = clamp(position.z / 66.0, 0.0, 1.0);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `
+        uniform vec3 uColor; uniform float uOpacity;
+        varying vec3 vN; varying vec3 vView; varying float vT;
+        void main(){
+          float facing = abs(dot(normalize(vN), normalize(vView)));
+          float soft   = smoothstep(0.0, 0.62, facing);
+          float fade   = pow(1.0 - vT, 1.6);
+          float core   = 0.45 + 0.55 * pow(1.0 - vT, 0.4);
+          gl_FragColor = vec4(uColor, uOpacity * soft * fade * core);
+        }`,
+      transparent: true, blending: THREE.AdditiveBlending,
+      depthWrite: false, side: THREE.DoubleSide
     });
     const beam = new THREE.Mesh(bg, bm);
     beam.position.set(x, -.3, 3.6);
+    beam.rotation.x = .238;             // match the spotlight's downward aim
+    beam.userData.keepLit = true;       // visible from inside the sail too
     rig.add(beam);
     return { light: l, beam };
   };
@@ -159,11 +190,28 @@ return {
 
   setLampColor(c){
     if (lampL){ lampL.color.copy(c); lampR.color.copy(c); }
-    if (beamL){ beamL.material.color.copy(c); beamR.material.color.copy(c); }
+    if (beamL){ beamL.material.uniforms.uColor.value.copy(c);
+                beamR.material.uniforms.uColor.value.copy(c); }
   },
   setLampIntensity(i){ if (lampL){ lampL.intensity = lampR.intensity = i; } },
-  setBeamOpacity(o){ if (beamL){ beamL.material.opacity = beamR.material.opacity = o; } },
-  setVisible(v){ if (group) group.visible = v; }
+  setBeamOpacity(o){
+    if (!beamL) return;
+    beamL.material.uniforms.uOpacity.value = o;
+    beamR.material.uniforms.uOpacity.value = o;
+  },
+  /* Hide the hull in first person WITHOUT killing the lamps. The
+     spotlights are children of this group, and Three's traversal skips
+     lights under an invisible parent — so the old group.visible=false
+     turned the headlights off entirely. It went unnoticed while the
+     ambient light was bright enough to carry the scene on its own. */
+  setVisible(v){
+    if (!group) return;
+    group.visible = true;
+    group.traverse(o => {
+      if (o === group || o.isLight || o.userData.keepLit) return;
+      if (o.isMesh || o.isPoints || o.isLine) o.visible = v;
+    });
+  }
 };
 
 })();

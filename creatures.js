@@ -13,11 +13,51 @@ const CREATURES = (() => {
 const mat = (color, opts) => new THREE.MeshStandardMaterial(
   Object.assign({ color, roughness: .72, metalness: .05, flatShading: true }, opts || {}));
 
+/* ---- photophores ----
+   At 2140m almost everything that is visible is visible because it is
+   making its own light. These are unlit additive sprites, so they cost
+   nothing and they are exactly what the bloom pass picks up: a row of
+   them along a flank reads as a living thing long before the silhouette
+   resolves out of the fog. Each returns a pulse(t, seed) for the caller
+   to drive from its own anim(). */
+function photophores(parent, spots, colour, size){
+  const m = new THREE.MeshBasicMaterial({
+    color: colour, transparent: true, opacity: .9,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  const geo = new THREE.SphereGeometry(size || .09, 6, 5);
+  const lights = [];
+  for (const [x, y, z] of spots){
+    const d = new THREE.Mesh(geo, m.clone());
+    d.position.set(x, y, z);
+    parent.add(d);
+    lights.push(d);
+  }
+  return (t, seed, rate) => {
+    for (let i = 0; i < lights.length; i++){
+      const w = (Math.sin(t * (rate || 1.7) + seed + i * .55) + 1) * .5;
+      lights[i].material.opacity = .18 + w * .82;
+      lights[i].scale.setScalar(.75 + w * .6);
+    }
+  };
+}
+
+/* A row of evenly spaced points down one flank, mirrored. */
+function flankRow(n, z0, z1, y, x){
+  const out = [];
+  for (let i = 0; i < n; i++){
+    const k = n === 1 ? .5 : i / (n - 1);
+    const z = z0 + (z1 - z0) * k;
+    out.push([ x, y, z], [-x, y, z]);
+  }
+  return out;
+}
+
 /* ---- manta ray: slow wing beats, the showpiece ---- */
 function makeRay(){
   const g = new THREE.Group();
-  const skin = mat(0x3d5a70, { flatShading: false, roughness: .55 });
-  const belly = mat(0xd8e8ec, { flatShading: false, roughness: .6 });
+  const skin = mat(0x1b2c3a, { flatShading: false, roughness: .55 });
+  const belly = mat(0x35505c, { flatShading: false, roughness: .6 });
 
   const body = new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 12), skin);
   body.scale.set(1, .38, 2.1); g.add(body);
@@ -43,10 +83,13 @@ function makeRay(){
     f.rotation.x = -Math.PI / 2.4; f.position.set(side * .8, 0, 2.7); g.add(f);
   }
 
+  const glow = photophores(g, flankRow(5, 1.8, -2.4, -.18, 1.5), 0x63d8ff, .10);
+
   g.userData.anim = (t, seed) => {
     const beat = Math.sin(t * 1.1 + seed);
     wings.forEach(({ pivot, side }) => { pivot.rotation.z = -side * beat * .42; });
     g.rotation.z = beat * .06;
+    glow(t, seed, 1.1);
   };
   g.userData.scale = 1.6;
   return g;
@@ -55,10 +98,11 @@ function makeRay(){
 /* ---- jellyfish: translucent bell, pulsing, trailing tentacles ---- */
 function makeJelly(){
   const g = new THREE.Group();
-  const tint = [0x9fe8ff, 0xffc4e8, 0xc4b0ff, 0xa8ffd8][(Math.random() * 4) | 0];
+  const tint = [0x5fd8ff, 0xff8fd0, 0x9d7cff, 0x5cffc0][(Math.random() * 4) | 0];
   const bellMat = new THREE.MeshStandardMaterial({
-    color: tint, transparent: true, opacity: .42, roughness: .25,
-    emissive: tint, emissiveIntensity: .55, side: THREE.DoubleSide });
+    color: tint, transparent: true, opacity: .34, roughness: .25,
+    emissive: tint, emissiveIntensity: 1.6, side: THREE.DoubleSide,
+    depthWrite: false });
 
   const bell = new THREE.Mesh(new THREE.SphereGeometry(1.5, 18, 12, 0, 6.28, 0, Math.PI / 1.85), bellMat);
   g.add(bell);
@@ -92,12 +136,12 @@ function makeJelly(){
 /* ---- sea turtle: unhurried flipper strokes ---- */
 function makeTurtle(){
   const g = new THREE.Group();
-  const shellMat = mat(0x4a6b3c, { flatShading: false, roughness: .8 });
-  const skinMat  = mat(0x86a06a, { flatShading: false });
+  const shellMat = mat(0x22321f, { flatShading: false, roughness: .8 });
+  const skinMat  = mat(0x3c4a34, { flatShading: false });
 
   const shell = new THREE.Mesh(new THREE.SphereGeometry(1.6, 16, 12), shellMat);
   shell.scale.set(1.15, .55, 1.5); g.add(shell);
-  const plast = new THREE.Mesh(new THREE.SphereGeometry(1.5, 14, 10), mat(0xcfd8a8, { flatShading: false }));
+  const plast = new THREE.Mesh(new THREE.SphereGeometry(1.5, 14, 10), mat(0x53604a, { flatShading: false }));
   plast.scale.set(1.02, .3, 1.35); plast.position.y = -.3; g.add(plast);
 
   const head = new THREE.Mesh(new THREE.SphereGeometry(.5, 12, 10), skinMat);
@@ -129,8 +173,8 @@ function makeTurtle(){
 /* ---- squid: mantle plus a fan of arms ---- */
 function makeSquid(){
   const g = new THREE.Group();
-  const body = mat(0xc4627a, { flatShading: false, roughness: .45,
-                               emissive: 0x3a1020, emissiveIntensity: .35 });
+  const body = mat(0x6e1f2e, { flatShading: false, roughness: .45,
+                               emissive: 0x2a0812, emissiveIntensity: .6 });
 
   const mantle = new THREE.Mesh(new THREE.ConeGeometry(1.0, 4.4, 14), body);
   mantle.rotation.x = -Math.PI / 2; mantle.position.z = -1.4; g.add(mantle);
@@ -155,11 +199,14 @@ function makeSquid(){
     pivot.rotation.z = a;
     g.add(pivot); arms.push({ pivot, a });
   }
+  const glow = photophores(g, flankRow(4, -2.6, .4, -.5, .82), 0x7affe0, .11);
+
   g.userData.anim = (t, seed) => {
     arms.forEach(({ pivot, a }, i) => {
       pivot.rotation.x = -Math.PI / 2.1 + Math.sin(t * 2.1 + seed + i * .5) * .26;
     });
     g.rotation.z = Math.sin(t * .8 + seed) * .12;
+    glow(t, seed, 2.4);
   };
   g.userData.scale = 1.25;
   return g;
@@ -168,8 +215,8 @@ function makeSquid(){
 /* ---- whale: distant, huge, slow ---- */
 function makeWhale(){
   const g = new THREE.Group();
-  const skin = mat(0x46607a, { flatShading: false, roughness: .85 });
-  const pale = mat(0xc8d8de, { flatShading: false, roughness: .8 });
+  const skin = mat(0x1a2836, { flatShading: false, roughness: .85 });
+  const pale = mat(0x3a4a54, { flatShading: false, roughness: .8 });
 
   const body = new THREE.Mesh(new THREE.SphereGeometry(3, 18, 14), skin);
   body.scale.set(1, 1.05, 3.6); g.add(body);

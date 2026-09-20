@@ -11,6 +11,44 @@ const AUDIO = (() => {
 let ctx = null, master = null, bed = null, bedGain = null, groanGain = null;
 let ready = false, muted = false, noiseBuf = null;
 
+/* ---- sample playback ----
+   The synth kit stays: it is instant, it never fails to load, and it
+   carries the game on its own. These files sit on top of it. Anything
+   that has not decoded yet simply does not play, and the synthesised
+   equivalent covers for it, so a missing or slow file can never stall
+   the game or throw. */
+let sfxGain = null, musicGain = null, musicSrc = null, musicBuf = null;
+const SAMPLES = {};                       // name -> AudioBuffer
+const SAMPLE_SRC = {
+  ping:  'audio/sonar-ping.ogg',
+  alert: 'audio/alert.mp3'
+};
+const MUSIC_SRC = 'audio/music.mp3';
+const MUSIC_VOL = 0.22;                   // sits under the effects, not over them
+
+function loadSample(name, url){
+  fetch(url).then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status))
+    .then(b => ctx.decodeAudioData(b))
+    .then(buf => { SAMPLES[name] = buf; })
+    .catch(() => {});                     // silent: the synth version covers it
+}
+
+/* Play a decoded sample. Returns false if it is not loaded, so callers can
+   fall through to the synthesised version. */
+function sample(name, vol, rate){
+  if (!ready || muted || !SAMPLES[name]) return false;
+  try {
+    const s = ctx.createBufferSource();
+    s.buffer = SAMPLES[name];
+    s.playbackRate.value = rate || 1;
+    const g = ctx.createGain();
+    g.gain.value = vol == null ? 1 : vol;
+    s.connect(g); g.connect(sfxGain || master);
+    s.start();
+    return true;
+  } catch (e){ return false; }
+}
+
 const now = () => ctx.currentTime;
 
 function makeNoise(){
@@ -70,6 +108,16 @@ function init(){
 
     ready = true;
   } catch(e){ ready = false; }
+  /* separate buses so music can duck under the effects independently */
+  try {
+    sfxGain = ctx.createGain();   sfxGain.gain.value = 1;     sfxGain.connect(master);
+    musicGain = ctx.createGain(); musicGain.gain.value = 0;   musicGain.connect(master);
+    for (const k in SAMPLE_SRC) loadSample(k, SAMPLE_SRC[k]);
+    fetch(MUSIC_SRC).then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status))
+      .then(b => ctx.decodeAudioData(b))
+      .then(buf => { musicBuf = buf; if (API.__wantMusic) API.startMusic(); })
+      .catch(() => {});
+  } catch (e){}
 }
 
 /* ---- primitives ---- */
@@ -102,11 +150,17 @@ function noise(dur, freq, q, vol, type){
 const API = {
   init,
   get ready(){ return ready; },
-  toggleMute(){ muted = !muted; if (master) master.gain.value = muted ? 0 : .55; return muted; },
+  toggleMute(){
+    muted = !muted;
+    if (master) master.gain.value = muted ? 0 : .55;
+    return muted;
+  },
 
-  /* active sonar: bright ping into a long watery tail */
+  /* active sonar: the recorded ping when it has loaded, the synthesised
+     one until then (and forever, if the file never arrives) */
   ping(){
     if (!ready || muted) return;
+    if (sample('ping', .5)) return;
     const v = makeVerb(.45);
     tone(1180, .5, 'sine', .16, 620, v);
     tone(1180, .5, 'sine', .10, 620);
@@ -177,12 +231,14 @@ const API = {
 
   /* a sensor has crossed into the amber band */
   alertWarn(){
+    if (sample('alert', .42, 1.0)) return;
     tone(1040, .09, 'square', .05);
     setTimeout(() => tone(1320, .11, 'square', .045), 105);
   },
 
   /* a sensor has crossed into the red band — more insistent */
   alertCrit(){
+    if (sample('alert', .6, 0.82)) return;   // lower + louder reads as worse
     if (!ready || muted) return;
     for (let i = 0; i < 3; i++){
       setTimeout(() => {
@@ -199,6 +255,48 @@ const API = {
   },
 
   /* a dashboard value moved — short neutral tick */
+  /* ---- background music ----
+     Loops for the whole session under everything else. Fades in rather
+     than snapping on, and ducks instead of stopping so a resume is
+     seamless. */
+  startMusic(){
+    API.__wantMusic = true;
+    if (!ready || !musicBuf || musicSrc) return;
+    try {
+      musicSrc = ctx.createBufferSource();
+      musicSrc.buffer = musicBuf;
+      musicSrc.loop = true;
+      musicSrc.connect(musicGain);
+      musicSrc.start();
+      musicGain.gain.cancelScheduledValues(now());
+      musicGain.gain.setValueAtTime(0, now());
+      musicGain.gain.linearRampToValueAtTime(muted ? 0 : MUSIC_VOL, now() + 2.5);
+    } catch (e){}
+  },
+  stopMusic(){
+    API.__wantMusic = false;
+    if (!musicGain) return;
+    try {
+      musicGain.gain.cancelScheduledValues(now());
+      musicGain.gain.linearRampToValueAtTime(0, now() + 0.8);
+    } catch (e){}
+  },
+  setMusicVolume(v){
+    if (!musicGain) return;
+    try {
+      musicGain.gain.cancelScheduledValues(now());
+      musicGain.gain.linearRampToValueAtTime(muted ? 0 : v, now() + 0.4);
+    } catch (e){}
+  },
+  musicPlaying(){ return !!musicSrc; },
+
+  /* the tick a warning lamp makes as it blinks — deliberately tiny */
+  blip(level){
+    if (!ready || muted) return;
+    if (level === 'crit') tone(1420, .045, 'square', .030);
+    else                  tone(980,  .040, 'sine',   .022);
+  },
+
   statTick(up){
     tone(up ? 1180 : 620, .07, 'sine', .035, up ? 1480 : 460);
   }

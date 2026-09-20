@@ -491,9 +491,13 @@ return {
   getView(){ return 'cockpit'; },
   setClueSites(){}, clearClueSites(){}, resumeAuto(){},
   isDriving(){ return false; }, boatSpeed(){ return 0; },
-  heading(){ return 0; }, depth(){ return 2140; },
+  heading(){ return 0; }, depth(){ return 2140; },   // metres, same scale as ENV3D
   pitch(){ return 0; }, throttle(){ return 0; },
   checkpointInfo(){ return null; }, startLeg(){}, setCurrent(){},
+  // no flying in the 2D fallback, so the transit phase is skipped entirely
+  onCreatureHit(){}, onCheckpointBlocked(){}, cluesComplete(){ return true; },
+  setPowerOut(){}, resetLegPower(){}, isPowerOut(){ return false; },
+  setPaused(){}, isPaused(){ return false; },
   clueProgress(){ return { found:0, total:0 }; },
   radarContacts(){ return []; },
   getQuality(){ return 'n/a'; }

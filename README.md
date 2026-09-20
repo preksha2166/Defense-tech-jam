@@ -168,9 +168,16 @@ Nothing important changes silently.
 
 ## Scoring
 
-**Trust Calibration** (0–100) moves with every decision. The scoring never
-rewards agreement with ATLAS by itself — OVERRIDE earns full credit only
-when the player QUESTIONed or INVESTIGATEd first (`ifEvidence` in the data).
+**Trust Calibration** (0–100) moves with every decision. OVERRIDE earns full
+credit only when the player QUESTIONed or INVESTIGATEd first (`ifEvidence` in
+the data).
+
+> **Known tuning gap.** Pressing TRUST at all ten checkpoints ends at
+> calibration **61**, up from the starting 50: ATLAS is right six times with
+> large positive deltas (+74) and wrong four times (−63). The *profile*
+> correctly reports OVERTRUST and hull drops to 41%, but the headline number
+> still rewards blanket agreement. Blanket distrust does lose the boat,
+> breaching at CP10. Rebalancing the wrong-call deltas would close it.
 
 **Hull integrity** drains on miscalibrated calls. At zero you lose the boat.
 
@@ -182,7 +189,7 @@ Endings are learning profiles, not pass/fail:
 - `ERRATIC` — mistakes in both directions, no pattern
 - `HULL BREACH` — miscalibration cost the boat
 
-Drone power allows **four** investigations across **six** checkpoints where
+Drone power allows **four** investigations across **seven** checkpoints where
 investigating pays. That scarcity is deliberate: the player must choose
 which uncertainties are worth spending on.
 

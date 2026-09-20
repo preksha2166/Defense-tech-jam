@@ -15,6 +15,8 @@ const ENV3D = (() => {
 
 let renderer, scene, camera, clock;
 let floor, rocks, kelp, grass, fishM, motes, beamL, beamR, lampL, lampR, ambient, hemi, sun;
+let biolum, BIO = [];
+const FISH_TIME = { value: 0 };   // shared clock for the fish vertex shader
 let boat, chaseFill, beacons = [], beaconData = [], onClue = null;
 let fauna = [];
 
@@ -37,22 +39,26 @@ let cp = 0, mode = 'title', running = false, speed = 5.2, boost = 0, shakeAmt = 
    so the first ~2s are sampled and the scene downgrades itself if the
    frame rate is poor. 'P' cycles it manually. */
 let quality = 'high', samples = [], adapted = false, lastDt = 1/60;
+let paused = false;
 const FULL = {};
 
 const DEPTH = 190;        // how far into the fog the world extends
 const RECYCLE = 26;       // z past the camera at which objects wrap
 
-/* ---- per-checkpoint atmosphere: the same mood arc, in 3D ---- */
+/* ---- per-checkpoint atmosphere: the same mood arc, in 3D ----
+   Deep water, not a reef. At 2140m the only meaningful light is the
+   one you brought with you, so the fog is near-black navy, ambient is
+   just enough to keep silhouettes from going solid, and the lamps do
+   the work. The distant "sun" is kept at a trace intensity — it is not
+   sunlight, it is the faint downwelling glow that stops the water
+   reading as empty space. Fog density is high: things resolve out of
+   the murk instead of fading in politely. */
 const ATMO = [
-  // Sunlit but not washed out. Fog is a saturated tropical blue-green with
-  // enough density to give distance real falloff; ambient is strong but the
-  // sun still creates direction, so surfaces keep shading instead of going
-  // flat and milky.
-  { fog:0x1f7f9e, den:.0125, lamp:0xffe9c4, lampI:2.4, amb:0x4fb8d0, ambI:.78, floor:0x4c7d70, sun:0xcdeeff, sunI:1.05 },
-  { fog:0x186d92, den:.0150, lamp:0xffe4c0, lampI:2.5, amb:0x3fa0c4, ambI:.70, floor:0x426b68, sun:0xbde4ff, sunI:.95 },
-  { fog:0x1f8c7c, den:.0135, lamp:0xffd49a, lampI:2.8, amb:0x4fc0a4, ambI:.76, floor:0x4f7d5e, sun:0xd6ffe4, sunI:1.02 },
-  { fog:0x13597c, den:.0185, lamp:0xf0f4ff, lampI:2.3, amb:0x3286ac, ambI:.58, floor:0x38606a, sun:0xaed4f2, sunI:.82 },
-  { fog:0x154d7e, den:.0170, lamp:0xe8f0ff, lampI:2.2, amb:0x3a76ae, ambI:.62, floor:0x3c5c78, sun:0xbcd6ff, sunI:.88 }
+  { fog:0x06222f, den:.0290, lamp:0xffe3b4, lampI:2.5, amb:0x11566b, ambI:.42, floor:0x2c4a48, sun:0x7fc4e0, sunI:.30 },
+  { fog:0x05202e, den:.0330, lamp:0xffdcaa, lampI:2.6, amb:0x0f4d66, ambI:.38, floor:0x27423f, sun:0x74b8db, sunI:.26 },
+  { fog:0x07262c, den:.0300, lamp:0xffd49a, lampI:2.7, amb:0x14605e, ambI:.42, floor:0x2e4a3e, sun:0x84cfc6, sunI:.29 },
+  { fog:0x041a2b, den:.0395, lamp:0xeef2ff, lampI:2.4, amb:0x0b3f5e, ambI:.30, floor:0x22383f, sun:0x6aa8d2, sunI:.21 },
+  { fog:0x04182a, den:.0360, lamp:0xe6eeff, lampI:2.45, amb:0x0d4467, ambI:.33, floor:0x243748, sun:0x71aedb, sunI:.23 }
 ];
 const atmo = () => ATMO[Math.min(cp, ATMO.length - 1)];
 
@@ -139,7 +145,7 @@ function makeFloor(a){
   // caustics as a separate additive skin just above the bed
   const cg = geo.clone();
   const cm = new THREE.MeshBasicMaterial({
-    map: TEX.caustic, transparent: true, opacity: .05,
+    map: TEX.caustic, transparent: true, opacity: .085,
     blending: THREE.AdditiveBlending, depthWrite: false
   });
   const caus = new THREE.Mesh(cg, cm);
@@ -153,6 +159,9 @@ function makeFloor(a){
    sub always has a corridor — otherwise you fly straight through a rock face. */
 function placeRock(o, initial){
   o.s = 1.6 + Math.random() * 8.5;
+  o.sx = o.sx || (.72 + Math.random() * .62);
+  o.sy = o.sy || (.70 + Math.random() * .80);
+  o.sz = o.sz || (.72 + Math.random() * .62);
   const side = Math.random() < .5 ? -1 : 1;
   o.x = side * (5 + o.s * 1.15 + Math.random() * 52);
   o.y = -12.8 + Math.random() * 1.6;
@@ -178,34 +187,145 @@ function makeRocks(){
   TEX.rock.normalMap.repeat.set(2.2, 2.2);
 
   const mat = new THREE.MeshStandardMaterial({
-    color: 0x8fa5a2, roughness: .93, metalness: .0,
+    color: 0x5d706e, roughness: .93, metalness: .0,
     map: TEX.rock.map, normalMap: TEX.rock.normalMap,
     normalScale: new THREE.Vector2(1.9, 1.9)
   });
   const N = 240;
   const mesh = new THREE.InstancedMesh(geo, mat, N);
   const d = new THREE.Object3D();
+  const c = new THREE.Color();
   rockData = [];
   for (let i = 0; i < N; i++){
     const o = { rx: Math.random() * 6.28, ry: Math.random() * 6.28, rz: Math.random() * 6.28 };
     placeRock(o, true);
     rockData.push(o);
     d.position.set(o.x, o.y, o.z);
+    // Non-uniform scale per axis: 240 copies of one lump read as 240 copies
+    // of one lump. Squashing each one differently hides the shared mesh.
     d.rotation.set(o.rx, o.ry, o.rz);
-    d.scale.set(o.s, o.s * .62, o.s);
+    d.scale.set(o.s * o.sx, o.s * .62 * o.sy, o.s * o.sz);
     d.updateMatrix(); mesh.setMatrixAt(i, d.matrix);
+    // and a little tint drift, warmer for the sediment-buried ones
+    c.setHSL(.45 + (Math.random() - .5) * .10,
+             .06 + Math.random() * .12,
+             .30 + Math.random() * .22);
+    mesh.setColorAt(i, c);
   }
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   return mesh;
 }
 
 /* ---- fish ---- */
+/* ---- geometry merge ----
+   r128's core does not ship BufferGeometryUtils (the name only appears in a
+   warning string), so this is the 25-line version: concatenate the standard
+   attributes and re-base the indices. Enough to assemble a fish out of
+   primitives and still draw it as one instanced call. */
+function mergeGeos(list){
+  let vc = 0, ic = 0;
+  for (const g of list){
+    vc += g.attributes.position.count;
+    ic += g.index ? g.index.count : g.attributes.position.count;
+  }
+  const pos = new Float32Array(vc * 3),
+        nor = new Float32Array(vc * 3),
+        uvs = new Float32Array(vc * 2);
+  const idx = new (vc > 65535 ? Uint32Array : Uint16Array)(ic);
+  let vo = 0, io = 0;
+  for (const g of list){
+    const p = g.attributes.position, n = g.attributes.normal, u = g.attributes.uv;
+    pos.set(p.array, vo * 3);
+    if (n) nor.set(n.array, vo * 3);
+    if (u) uvs.set(u.array, vo * 2);
+    if (g.index) for (let i = 0; i < g.index.count; i++) idx[io++] = g.index.getX(i) + vo;
+    else         for (let i = 0; i < p.count;       i++) idx[io++] = i + vo;
+    vo += p.count;
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal',   new THREE.BufferAttribute(nor, 3));
+  out.setAttribute('uv',       new THREE.BufferAttribute(uvs, 2));
+  out.setIndex(new THREE.BufferAttribute(idx, 1));
+  return out;
+}
+
+/* A flat fin from a 2D outline, standing in the vertical plane. */
+function finGeo(pts, opts){
+  opts = opts || {};
+  const sh = new THREE.Shape();
+  sh.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) sh.lineTo(pts[i][0], pts[i][1]);
+  sh.closePath();
+  const g = new THREE.ShapeGeometry(sh);
+  if (opts.horizontal) g.rotateX(-Math.PI / 2);   // pectorals lie flat
+  g.rotateY(-Math.PI / 2);                        // shape's +X becomes +Z
+  if (opts.pos) g.translate(opts.pos[0], opts.pos[1], opts.pos[2]);
+  return g;
+}
+
+/* ---- fish ----
+   Was a six-sided cone. A cone reads as a cone at any distance, and in a
+   scene this dark the silhouette is all you get, so it is worth the
+   geometry: a laterally compressed lathed body, a forked caudal fin, a
+   dorsal and a pair of pectorals. The tail beat lives in the vertex
+   shader, like the kelp, so 46 fish still cost one draw call. */
+function fishGeometry(){
+  // body of revolution: nose at +Z, tail at -Z
+  const prof = [], SEG = 16;
+  for (let i = 0; i <= SEG; i++){
+    const t = i / SEG;                                  // 0 tail .. 1 nose
+    const r = Math.sin(Math.pow(t, .72) * Math.PI) * .40 + .015;
+    prof.push(new THREE.Vector2(Math.max(.012, r), (t - .45) * 1.55));
+  }
+  const body = new THREE.LatheGeometry(prof, 11);
+  body.rotateX(Math.PI / 2);         // lathe axis Y -> Z
+  body.scale(.66, 1.18, 1);          // narrow across, deep top-to-bottom
+
+  const tail = finGeo([[-.10, 0], [-.62, .46], [-.46, .02], [-.62, -.46]],
+                      { pos: [0, 0, -.62] });
+  const dorsal = finGeo([[.18, 0], [-.02, .40], [-.34, .34], [-.30, 0]],
+                        { pos: [0, .22, .08] });
+  const anal = finGeo([[.02, 0], [-.10, -.24], [-.34, -.20], [-.30, 0]],
+                      { pos: [0, -.20, -.14] });
+  const pecL = finGeo([[0, 0], [-.30, .22], [-.34, -.02]],
+                      { horizontal: true, pos: [ .17, -.04, .22] });
+  const pecR = finGeo([[0, 0], [-.30, -.22], [-.34, .02]],
+                      { horizontal: true, pos: [-.17, -.04, .22] });
+
+  return mergeGeos([body, tail, dorsal, anal, pecL, pecR]);
+}
+
 function makeFish(){
-  const geo = new THREE.ConeGeometry(.30, 1.6, 6);
-  geo.rotateX(Math.PI / 2);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x8fb9c4, roughness: .8,
-                                               emissive: 0x0d2b33, emissiveIntensity: .12 });
+  const geo = fishGeometry();
   const N = 46;
+
+  // per-instance phase so the school does not beat in unison
+  const phase = new Float32Array(N);
+  for (let i = 0; i < N; i++) phase[i] = Math.random() * 6.283;
+  geo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(phase, 1));
+
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x4c6f7a, roughness: .62, metalness: .22,
+    emissive: 0x0a1f26, emissiveIntensity: .18,
+    side: THREE.DoubleSide                 // the fins are single-sided planes
+  });
+
+  // tail beat: amplitude ramps from nothing at the head to full at the tail
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = FISH_TIME;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>',
+        `#include <common>
+         uniform float uTime;
+         attribute float aPhase;`)
+      .replace('#include <begin_vertex>',
+        `#include <begin_vertex>
+         float bend = smoothstep(0.45, -0.85, position.z);
+         transformed.x += sin(uTime * 5.2 + aPhase + position.z * 2.6) * bend * 0.26;`);
+  };
+
   const mesh = new THREE.InstancedMesh(geo, mat, N);
   fishData = [];
   for (let i = 0; i < N; i++){
@@ -228,9 +348,9 @@ function makeFish(){
        Real marine snow is mostly haze with occasional bright flakes;
        one uniform particle size is the tell that it is fake. ---- */
 const MOTE_LAYERS = [
-  { n: 7000, size: .17, op: .42 },   // fine haze
-  { n: 3200, size: .38, op: .72 },   // mid
-  { n:  850, size: .82, op: .95 }    // bright flakes catching the lamp
+  { n: 7000, size: .17, op: .40 },   // fine haze
+  { n: 3200, size: .38, op: .62 },   // mid
+  { n:  850, size: .80, op: .85 }    // bright flakes catching the lamp
 ];
 function makeMotes(){
   const tex = moteTexture();
@@ -248,7 +368,7 @@ function makeMotes(){
     const mat = new THREE.PointsMaterial({
       size: L.size, map: tex, transparent: true, opacity: L.op,
       depthWrite: false, blending: THREE.AdditiveBlending,
-      sizeAttenuation: true, color: 0xdaf0ff
+      sizeAttenuation: true, color: 0xa8ccdd
     });
     const pts = new THREE.Points(geo, mat);
     group.add(pts);
@@ -270,22 +390,45 @@ function makeBeam(a){
 }
 
 /* ---- clue beacons: things worth driving to ---- */
-function makeBeacon(col){
+/* ---- clue beacon ----
+   The pillar is centred on the core, not stacked above it. It used to run
+   from the core upward, which meant the thing you could see was 60 units of
+   column and the thing you could actually collect was a 13-unit bubble at
+   the very bottom of it — so flying to the light did nothing unless your
+   depth happened to match. Now the column marks the whole catch volume. */
+const CLUE_R_H = 16;     // horizontal catch radius
+const CLUE_R_V = 46;     // vertical half-height, matches the visible pillar
+
+function makeBeacon(){
   const g = new THREE.Group();
-  const core = new THREE.Mesh(new THREE.OctahedronGeometry(1.1, 0),
-    new THREE.MeshBasicMaterial({ color: col }));
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(1.3, 0),
+    new THREE.MeshBasicMaterial({ color: 0xffffff }));
   g.add(core);
-  const halo = new THREE.Mesh(new THREE.SphereGeometry(2.6, 14, 10),
-    new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: .16,
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(3.0, 14, 10),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .16,
                                   blending: THREE.AdditiveBlending, depthWrite: false }));
   g.add(halo);
-  const col2 = new THREE.Mesh(new THREE.CylinderGeometry(.5, .5, 60, 8, 1, true),
-    new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: .07,
+  const column = new THREE.Mesh(
+    new THREE.CylinderGeometry(CLUE_R_H * .55, CLUE_R_H * .55, CLUE_R_V * 2, 14, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .07,
                                   blending: THREE.AdditiveBlending, depthWrite: false,
                                   side: THREE.DoubleSide }));
-  col2.position.y = 28; g.add(col2);
-  g.userData.core = core; g.userData.halo = halo;
+  g.add(column);                                  // centred on the core
+  g.userData.core = core; g.userData.halo = halo; g.userData.column = column;
   return g;
+}
+
+/* Sequential targeting: exactly one beacon is live at a time, and it is the
+   only one that glows amber. Collect it and the next lights up. Everything
+   else stays a dim marker, so at any moment there is one unambiguous thing
+   to fly at. */
+const CLUE_ACTIVE  = 0xffa312;   // the one you are being sent to
+const CLUE_PENDING = 0x1d4a5e;   // known about, not your problem yet
+const CLUE_DONE    = 0x57d99a;   // logged
+
+function activeClueIndex(){
+  for (let i = 0; i < beaconData.length; i++) if (!beaconData[i].found) return i;
+  return -1;
 }
 
 /* Scatter one beacon per clue, out in front of the boat. */
@@ -295,13 +438,13 @@ function setClueSites(n){
   const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(BOAT.quat);
   const rightV = new THREE.Vector3(1, 0, 0).applyQuaternion(BOAT.quat);
   for (let i = 0; i < n; i++){
-    const dist = 55 + i * 34 + Math.random() * 26;
-    const side = (i % 2 ? 1 : -1) * (16 + Math.random() * 38);
+    const dist = 45 + i * 30 + Math.random() * 20;
+    const side = (i % 2 ? 1 : -1) * (14 + Math.random() * 28);
     const p = BOAT.pos.clone()
       .addScaledVector(fwd, dist)
       .addScaledVector(rightV, side);
     p.y = BOAT.pos.y - 14 + Math.random() * 34;
-    const b = makeBeacon(0x6fe4f0);
+    const b = makeBeacon();
     b.position.copy(p);
     scene.add(b);
     beacons.push(b);
@@ -310,19 +453,43 @@ function setClueSites(n){
 }
 
 function updateBeacons(dt, t){
+  const active = activeClueIndex();
+
   for (let i = 0; i < beacons.length; i++){
     const b = beacons[i], d = beaconData[i];
-    b.rotation.y += dt * .8;
-    b.userData.core.rotation.x += dt * 1.3;
-    const pulse = (Math.sin(t * 2.4 + i) + 1) * .5;
-    b.userData.halo.scale.setScalar(1 + pulse * .22);
-    if (d.found){
-      b.userData.core.material.color.setHex(0x57d99a);
-      b.userData.halo.material.color.setHex(0x57d99a);
-      b.userData.halo.material.opacity = .06;
-      continue;
-    }
-    if (b.position.distanceTo(BOAT.pos) < 13){
+    const isActive = (i === active);
+    const core = b.userData.core, halo = b.userData.halo, column = b.userData.column;
+
+    b.rotation.y += dt * (isActive ? 1.4 : .35);
+    core.rotation.x += dt * (isActive ? 2.2 : .6);
+
+    const pulse = (Math.sin(t * (isActive ? 3.2 : 1.2) + i) + 1) * .5;
+    const tint = d.found ? CLUE_DONE : isActive ? CLUE_ACTIVE : CLUE_PENDING;
+
+    // core, halo AND pillar all carry the same colour — the whole marker is
+    // the target, not just the little cube at the middle of it
+    core.material.color.setHex(tint);
+    halo.material.color.setHex(tint);
+    column.material.color.setHex(tint);
+
+    core.scale.setScalar(isActive ? 1.5 + pulse * .5 : .55);
+    halo.scale.setScalar(isActive ? 1.7 + pulse * .55 : .7);
+    halo.material.opacity = d.found ? .05 : isActive ? .38 + pulse * .22 : .04;
+
+    // the live pillar is a solid column of amber light you cannot miss;
+    // the dormant ones are thin cold markers
+    column.visible = !d.found;
+    column.scale.setScalar(isActive ? 1 : .28);
+    column.material.opacity = isActive ? (.46 + pulse * .20) : .04;
+
+    if (d.found || !isActive) continue;
+
+    /* Catch test is a vertical cylinder, not a sphere, so flying into the
+       pillar anywhere along its height counts. */
+    const dx = b.position.x - BOAT.pos.x;
+    const dz = b.position.z - BOAT.pos.z;
+    const dy = b.position.y - BOAT.pos.y;
+    if (dx*dx + dz*dz < CLUE_R_H*CLUE_R_H && Math.abs(dy) < CLUE_R_V){
       d.found = true;
       if (onClue) onClue(d.idx);
     }
@@ -366,7 +533,24 @@ function placeFauna(o, initial){
   o.yaw = Math.random() * 6.28;
 }
 
+/* Creature contact. These used to be pure ambience; now brushing one costs
+   hull and shoves the boat off course, so the water between checkpoints is
+   something you have to actually fly through rather than past.
+
+   The cooldown matters: without it a single overlap fires every frame and
+   drains the whole hull in under a second. One hit, then a second of
+   invulnerability while you get clear. */
+let hitCooldown = 0, onHit = null;
+
+function creatureRadius(o){
+  // rough body half-length; the whale is genuinely huge, a jelly is not
+  const base = { whale: 11, ray: 6.5, turtle: 3.4, squid: 3.8, jelly: 3.0 }[o.type] || 4;
+  return base * (o.scale / (o.mesh.userData.scale || 1)) + 3.2;   // + the sub's own hull
+}
+
 function updateFauna(dt, t, forward){
+  hitCooldown = Math.max(0, hitCooldown - dt);
+
   for (const o of fauna){
     // each creature swims its own heading, independent of the boat
     o.x += -Math.sin(o.yaw) * o.speed * dt;
@@ -381,6 +565,27 @@ function updateFauna(dt, t, forward){
     o.mesh.position.set(o.x, o.y + bob, o.z);
     o.mesh.rotation.y = o.yaw;
     if (o.mesh.userData.anim) o.mesh.userData.anim(t, o.seed);
+
+    // ---- contact ----
+    if (hitCooldown > 0) continue;
+    const dy = (o.y + bob) - BOAT.pos.y;
+    const r = creatureRadius(o);
+    if (dx*dx + dy*dy + dz*dz > r*r) continue;
+
+    hitCooldown = 1.1;
+    shakeAmt = Math.max(shakeAmt, .9);
+
+    // shove the boat away from the creature and scrub its speed
+    const n = Math.hypot(dx, dz) || 1;
+    BOAT.pos.x -= (dx / n) * 6.5;
+    BOAT.pos.z -= (dz / n) * 6.5;
+    BOAT.speed *= .35;
+    BOAT.auto = false;                  // you are flying now, not the autopilot
+
+    // and knock the creature clear so you do not immediately re-collide
+    o.x += (dx / n) * 9; o.z += (dz / n) * 9;
+
+    if (onHit) onHit(o.type);
   }
 }
 
@@ -390,7 +595,7 @@ let checkpoint = null;
 function makeCheckpoint(){
   const g = new THREE.Group();
   const ringMat = new THREE.MeshBasicMaterial({
-    color: 0xf0a94c, transparent: true, opacity: .85, side: THREE.DoubleSide });
+    color: 0xffa312, transparent: true, opacity: .9, side: THREE.DoubleSide });
   for (let i = 0; i < 3; i++){
     const r = new THREE.Mesh(new THREE.TorusGeometry(7 + i * 3.4, .34, 8, 40), ringMat);
     r.userData.spin = (i % 2 ? -1 : 1) * (.35 + i * .12);
@@ -398,15 +603,15 @@ function makeCheckpoint(){
     g.add(r);
   }
   const core = new THREE.Mesh(new THREE.SphereGeometry(2.2, 14, 12),
-    new THREE.MeshBasicMaterial({ color: 0xffd9a0 }));
+    new THREE.MeshBasicMaterial({ color: 0xffc247 }));
   g.add(core);
   const halo = new THREE.Mesh(new THREE.SphereGeometry(9, 16, 12),
-    new THREE.MeshBasicMaterial({ color: 0xf0a94c, transparent: true, opacity: .1,
+    new THREE.MeshBasicMaterial({ color: 0xffa312, transparent: true, opacity: .22,
                                   blending: THREE.AdditiveBlending, depthWrite: false }));
   g.add(halo);
   // vertical column so it is findable from a distance
-  const col = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 300, 10, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xf0a94c, transparent: true, opacity: .05,
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 300, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xffa312, transparent: true, opacity: .16,
                                   blending: THREE.AdditiveBlending, depthWrite: false,
                                   side: THREE.DoubleSide }));
   g.add(col);
@@ -419,23 +624,49 @@ function placeCheckpoint(){
   if (!checkpoint){ checkpoint = makeCheckpoint(); scene.add(checkpoint); }
   const fwd = forwardVec();
   checkpoint.position.copy(BOAT.pos)
-    .addScaledVector(fwd, 300 + Math.random() * 90);
+    .addScaledVector(fwd, 210 + Math.random() * 60);
   checkpoint.position.y = BOAT.pos.y + (Math.random() - .5) * 52;
   checkpoint.visible = true;
 }
 
+/* The checkpoint will not accept you until every clue beacon on this leg has
+   been scanned. Locked it burns cold blue and spins slowly; unlocked it goes
+   back to amber and speeds up, so the state is readable from across the
+   water without looking at the HUD. */
+function cluesComplete(){
+  if (forcedOpen) return true;
+  return beaconData.length > 0 && beaconData.every(b => b.found);
+}
+
 function updateCheckpoint(dt, t){
   if (!checkpoint || !checkpoint.visible) return;
-  checkpoint.children.forEach(c => { if (c.userData.spin) c.rotation.z += dt * c.userData.spin; });
-  const pulse = (Math.sin(t * 2) + 1) * .5;
-  checkpoint.userData.halo.scale.setScalar(1 + pulse * .2);
-  checkpoint.userData.core.scale.setScalar(.85 + pulse * .3);
-  if (BOAT.pos.distanceTo(checkpoint.position) < 15){
-    checkpoint.visible = false;
-    if (onArrive) onArrive();
+  const open = cluesComplete();
+
+  /* The checkpoint is amber either way — it is always the place you are
+     trying to get to. Locked, it just idles: slow rings, shallow pulse.
+     Open, it spins up and breathes hard. */
+  const spinK = open ? 1 : .3;
+  checkpoint.children.forEach(c => { if (c.userData.spin) c.rotation.z += dt * c.userData.spin * spinK; });
+  const pulse = (Math.sin(t * (open ? 2.4 : .8)) + 1) * .5;
+  checkpoint.userData.halo.scale.setScalar(1 + pulse * (open ? .30 : .08));
+  checkpoint.userData.core.scale.setScalar((open ? .95 : .6) + pulse * (open ? .35 : .1));
+
+  const d = BOAT.pos.distanceTo(checkpoint.position);
+  if (d < 18){
+    if (open){
+      checkpoint.visible = false;
+      if (onArrive) onArrive();
+    } else if (onBlocked && t - lastBlocked > 2.2){
+      lastBlocked = t;                       // throttle: this fires every frame otherwise
+      onBlocked(beaconData.filter(b => !b.found).length);
+    }
   }
 }
-let onArrive = null;
+let onArrive = null, onBlocked = null, lastBlocked = -99;
+/* When the leg's scan power is spent the boat can no longer manoeuvre and
+   the checkpoint opens regardless of how much you found. You are never
+   stranded; you just arrive knowing less. */
+let powerOut = false, forcedOpen = false;
 
 /* ------------------------------------------------------------ init */
 function init(){
@@ -445,7 +676,9 @@ function init(){
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = .95;
+  // Lifted a little: the scene is much darker than it used to be, and ACES
+  // rolls the shadows off hard. The post grade puts the contrast back.
+  renderer.toneMappingExposure = 1.18;
 
   const a = atmo();
   scene = new THREE.Scene();
@@ -455,9 +688,9 @@ function init(){
   camera = new THREE.PerspectiveCamera(64, window.innerWidth / window.innerHeight, .1, 500);
   camera.position.set(0, 0, 0);
 
-  hemi = new THREE.HemisphereLight(a.amb, 0x17414a, a.ambI);
+  hemi = new THREE.HemisphereLight(a.amb, 0x081c22, a.ambI);
   scene.add(hemi);
-  ambient = new THREE.AmbientLight(a.amb, .20);
+  ambient = new THREE.AmbientLight(a.amb, .11);
   scene.add(ambient);
 
   // surface light from above — what makes this read as sunlit water
@@ -473,6 +706,7 @@ function init(){
   grass = FLORA.grass(TEX.kelp);  scene.add(grass);
   fishM = makeFish();   scene.add(fishM);
   motes = makeMotes();  scene.add(motes);
+  biolum = makeBiolum(); scene.add(biolum);
 
   // the boat itself; its lamps replace the free-floating ones
   BOAT.pos  = new THREE.Vector3(0, 0, 0);
@@ -481,7 +715,7 @@ function init(){
   scene.add(boat);
 
   // rides with the chase camera so the hull reads against the dark
-  chaseFill = new THREE.PointLight(0x9fd4e8, 0, 46, 2);
+  chaseFill = new THREE.PointLight(0x7fb8d8, 0, 34, 2);
   scene.add(chaseFill);
   bindInput();
 
@@ -489,8 +723,41 @@ function init(){
 
   FULL.rocks = rocks.count; FULL.kelp = kelp.count; FULL.grass = grass.count;
 
+  // Bloom, vignette, grade. Optional: if it will not initialise we just
+  // render the scene straight to the screen as before.
+  if (typeof POST !== 'undefined') POST.init(renderer);
+
   clock = new THREE.Clock();
   window.addEventListener('resize', onResize);
+}
+
+/* ---- bioluminescence: the only native light down here ----
+   Sparse, slow, and it blinks. These are the particles bloom was
+   added for — a handful of hard little lights in a lot of dark. */
+function makeBiolum(){
+  const N = 150;
+  const geo = new THREE.BufferGeometry();
+  const p = new Float32Array(N * 3);
+  BIO = [];
+  for (let i = 0; i < N; i++){
+    const o = {
+      x: (Math.random() - .5) * 90,
+      y: (Math.random() - .5) * 44,
+      z: -Math.random() * DEPTH,
+      ph: Math.random() * 6.28,
+      sp: .25 + Math.random() * .7,
+      drift: (Math.random() - .5) * .5
+    };
+    BIO.push(o);
+    p[i*3] = o.x; p[i*3+1] = o.y; p[i*3+2] = o.z;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  const mat = new THREE.PointsMaterial({
+    size: .42, map: moteTexture(), transparent: true, opacity: .8,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+    sizeAttenuation: true, color: 0x58cfc4
+  });
+  return new THREE.Points(geo, mat);
 }
 
 function applyQuality(q){
@@ -502,8 +769,13 @@ function applyQuality(q){
   if (rocks) rocks.count = low ? Math.floor(FULL.rocks * .5) : FULL.rocks;
   if (kelp)  kelp.count  = low ? Math.floor(FULL.kelp  * .5) : FULL.kelp;
   if (grass) grass.count = low ? Math.floor(FULL.grass * .45) : FULL.grass;
+  if (biolum) biolum.visible = true;   // cheap and it is most of the mood
   fauna.forEach((f, i) => { f.mesh.visible = !low || i < 6; });
   if (scene) scene.fog.density *= 1;   // unchanged; fog is free
+  // Keep the grade and the vignette on low — they cost almost nothing and
+  // they are what makes the water read as deep. Only bloom and grain,
+  // which are the per-pixel costs, get dialled back.
+  if (typeof POST !== 'undefined') POST.setStrength(low ? .45 : 1);
 }
 
 function sampleFrame(dt){
@@ -521,7 +793,11 @@ function bindInput(){
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     if (DRIVE_KEYS.has(k)){
       KEYS[k] = down;
-      if (down) BOAT.auto = false;          // any input drops autopilot
+      /* Any input drops the autopilot — EXCEPT once scan power is spent.
+         With no thrust available, letting a keypress disengage the
+         autopilot leaves the boat dead in the water with no way to reach
+         the checkpoint. The player would be stranded permanently. */
+      if (down && !powerOut) BOAT.auto = false;
       e.preventDefault();
     }
   };
@@ -549,6 +825,22 @@ const KEEL_Y = -8.5, CEIL_Y = 150;
    minimum flow the planes always get. */
 const MIN_PLANE_FLOW = 9;
 
+/* ---- relative bearing, starboard-positive ----
+   Forward is (-sin yaw, -cos yaw), so the yaw that points at a delta is
+   atan2(-dx, -dz). The bearing RELATIVE to the bow is then yaw - that.
+
+   Note the order. Both the sonar scope and the waypoint compass used to
+   compute `world - yaw`, which is the mirror image: a contact off the
+   starboard bow was reported at -90 and painted on the port side of the
+   scope, and the HUD needle pointed away from the thing it was meant to
+   lead you to. Verified against the hand-worked cases: at yaw 0 a contact
+   at +X is starboard and must read +90. */
+function relBearingDeg(dx, dz){
+  const world = Math.atan2(-dx, -dz);
+  const rel = (BOAT.yaw - world) * 180 / Math.PI;
+  return ((rel % 360) + 540) % 360 - 180;            // -180..180
+}
+
 function forwardVec(){
   return new THREE.Vector3(
     -Math.sin(BOAT.yaw) * Math.cos(BOAT.pitch),
@@ -557,7 +849,7 @@ function forwardVec(){
 }
 
 function driveBoat(dt){
-  const thrust = key(' ', 'Shift');
+  const thrust = key(' ', 'Shift') && !powerOut;
   const left   = key('a','ArrowLeft'),  right = key('d','ArrowRight');
   const up     = key('w','ArrowUp'),    down  = key('s','ArrowDown');
 
@@ -619,7 +911,7 @@ function placeCamera(forward, t){
     camera.lookAt(look);
     if (chaseFill){
       chaseFill.position.copy(camera.position).add(new THREE.Vector3(0, 3, 0));
-      chaseFill.intensity = 3.1;
+      chaseFill.intensity = .70;
     }
     camera.rotation.z += Math.sin(t * .43) * .008 + (Math.random() - .5) * sk * .07;
   } else {
@@ -704,7 +996,7 @@ function blendAtmo(dt){
   }
   SUB.setLampColor(cur.lamp);
   SUB.setLampIntensity(mode === 'game' ? cur.lampI * 1.25 : cur.lampI * .4);
-  SUB.setBeamOpacity(mode === 'game' ? .07 : .015);
+  SUB.setBeamOpacity(mode === 'game' ? .60 : .18);
   SUB.setVisible(view === 'chase');          // never see your own hull from inside
   floor.material.color.lerp(new THREE.Color(a.floor), k);
 }
@@ -714,6 +1006,18 @@ const dummy = typeof THREE !== 'undefined' ? new THREE.Object3D() : null;
 
 function tick(){
   if (!running) return;
+
+  /* Fully suspended: the intro film covers the whole window, so the scene
+     behind it is invisible and every frame of it is stolen from the video
+     decoder. Keep the rAF alive so we can resume, but do no simulation and
+     no rendering -- the 4-pass post chain in particular is expensive.
+     getDelta() is drained so the clock does not jump on resume. */
+  if (paused){
+    clock.getDelta();
+    requestAnimationFrame(tick);
+    return;
+  }
+
   const dt = Math.min(.05, clock.getDelta());
   const t  = clock.elapsedTime;
   lastDt = dt;
@@ -745,13 +1049,14 @@ function tick(){
     if (recycle(o, forward, 150, DEPTH)) o.s = 1.6 + Math.random() * 8.5;
     dummy.position.set(o.x, o.y, o.z);
     dummy.rotation.set(o.rx, o.ry, o.rz);
-    dummy.scale.set(o.s, o.s * .62, o.s);
+    dummy.scale.set(o.s * o.sx, o.s * .62 * o.sy, o.s * o.sz);
     dummy.updateMatrix(); rocks.setMatrixAt(i, dummy.matrix);
   }
   rocks.instanceMatrix.needsUpdate = true;
 
   // plants: the sway lives in the vertex shader, we only reposition clumps
   FLORA.UTIME.value = t;
+  FISH_TIME.value = t;
   FLORA.advance(kelp,  forward, BOAT.pos, RECYCLE, DEPTH);
   FLORA.advance(grass, forward, BOAT.pos, RECYCLE, DEPTH);
 
@@ -781,7 +1086,26 @@ function tick(){
     mp.needsUpdate = true;
   });
 
-  renderer.render(scene, camera);
+  // bioluminescence: drifts, blinks, and is recycled like everything else
+  if (biolum){
+    const bp = biolum.geometry.attributes.position;
+    for (let i = 0; i < BIO.length; i++){
+      const o = BIO[i];
+      o.y += Math.sin(t * o.sp + o.ph) * dt * .5;
+      o.x += o.drift * dt;
+      if (recycle(o, forward, 90, DEPTH)) o.y = BOAT.pos.y + (Math.random() - .5) * 44;
+      bp.setXYZ(i, o.x, o.y, o.z);
+    }
+    bp.needsUpdate = true;
+    // collective slow pulse, so the field breathes instead of sitting static
+    biolum.material.opacity = .34 + Math.sin(t * .7) * .16;
+  }
+
+  // hull-impact red wash, decaying with the shake that caused it
+  if (typeof POST !== 'undefined' && POST.available()) POST.setFlash(shakeAmt * .5);
+
+  if (!(typeof POST !== 'undefined' && POST.render(scene, camera, t)))
+    renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
 
@@ -806,22 +1130,60 @@ return {
   resumeAuto(){ BOAT.auto = true; BOAT.pitch *= .3; },
   setCurrent(c){ current = c; },
   isDriving(){ return !BOAT.auto; },
-  boatSpeed(){ return BOAT.speed || 0; },
+  boatSpeed(){ return (BOAT.speed || 0) * 1.94384; },   // m/s -> knots, the HUD says KT
   heading(){ return ((-BOAT.yaw * 180 / Math.PI) % 360 + 360) % 360; },
-  depth(){ return Math.round(2140 - BOAT.pos.y * 4); },
+  depth(){ return Math.round(2140 - BOAT.pos.y); },
   pitch(){ return BOAT.pitch; },
   throttle(){ return BOAT.throttle; },
 
   /* navigation telemetry for the HUD */
   checkpointInfo(){
     if (!checkpoint || !checkpoint.visible) return null;
-    const d = BOAT.pos.distanceTo(checkpoint.position);
-    const to = checkpoint.position.clone().sub(BOAT.pos);
-    const bearing = ((Math.atan2(-to.x, -to.z) * 180 / Math.PI) % 360 + 360) % 360;
-    const rel = ((bearing - this.heading()) % 360 + 540) % 360 - 180;   // -180..180
-    return { dist: Math.round(d), rel, vert: to.y };
+    return this.bearingTo(checkpoint.position);
+  },
+
+  /* Relative bearing to a world point, in the same convention the sonar
+     scope uses: forward is (-sin yaw, -cos yaw), so the yaw that points at
+     p is atan2(-dx, -dz) and the error is that minus BOAT.yaw.
+
+     This used to read `bearing - heading()`, but heading() returns the
+     COMPASS heading, which is -yaw. That made the error come out as
+     theta + yaw instead of theta - yaw: correct only while yaw was 0, and
+     mirrored the moment you turned. The compass needle then drove you away
+     from the target and stayed confidently pinned near zero while it did. */
+  bearingTo(p){
+    const dx = p.x - BOAT.pos.x, dz = p.z - BOAT.pos.z;
+    let rel = relBearingDeg(dx, dz);
+    return { dist: Math.round(BOAT.pos.distanceTo(p)), rel, vert: p.y - BOAT.pos.y };
+  },
+
+  /* What the HUD should be steering you at right now: the live clue while
+     any are outstanding, otherwise the checkpoint. One arrow and one number,
+     never a choice about which of three markers you are meant to chase. */
+  navTarget(){
+    const a = activeClueIndex();
+    if (a >= 0 && beacons[a]){
+      const info = this.bearingTo(beacons[a].position);
+      info.kind = 'clue';
+      info.index = a;
+      return info;
+    }
+    const cp = this.checkpointInfo();
+    if (cp) cp.kind = 'waypoint';
+    return cp;
   },
   startLeg(cb){ onArrive = cb; placeCheckpoint(); },
+  onCreatureHit(cb){ onHit = cb; },
+  onCheckpointBlocked(cb){ onBlocked = cb; },
+  /* Out of power: kill thrust, hand the boat to the autopilot so it still
+     drifts to the checkpoint, and open the gate. */
+  setPowerOut(v){
+    powerOut = !!v;
+    if (powerOut){ forcedOpen = true; BOAT.auto = true; }
+  },
+  resetLegPower(){ powerOut = false; forcedOpen = false; },
+  isPowerOut(){ return powerOut; },
+  cluesComplete(){ return cluesComplete(); },
   clueProgress(){ return { found: beaconData.filter(b => b.found).length, total: beaconData.length }; },
 
   /* Live radar picture, heading-up: bearing 0 is dead ahead, so the scope
@@ -833,17 +1195,19 @@ return {
     const rel = (p) => {
       const dx = p.x - BOAT.pos.x, dz = p.z - BOAT.pos.z;
       const dist = Math.hypot(dx, dz);
-      const world = Math.atan2(-dx, -dz);            // heading that points at p
-      let b = (world - BOAT.yaw) * 180 / Math.PI;
-      b = ((b % 360) + 360) % 360;
+      // starboard-positive, 0 dead ahead — see relBearingDeg
+      const b = (relBearingDeg(dx, dz) + 360) % 360;
       return { b, r: Math.min(.97, dist / range), dist };
     };
+    const activeIdx = activeClueIndex();
     for (let i = 0; i < beacons.length; i++){
       const q = rel(beacons[i].position);
       if (q.dist > range) continue;
-      out.push({ b: q.b, r: q.r, s: 2,
-                 kind: beaconData[i].found ? 'found' : 'clue',
-                 tag: beaconData[i].found ? '\u2713' : 'CLUE' });
+      const found = beaconData[i].found;
+      const live  = (i === activeIdx);
+      out.push({ b: q.b, r: q.r, s: found ? 2 : (live ? 3 : 1),
+                 kind: found ? 'found' : (live ? 'clue' : 'cluedim'),
+                 tag: found ? '\u2713' : (live ? 'CLUE' : '') });
     }
     if (checkpoint && checkpoint.visible){
       const q = rel(checkpoint.position);
@@ -852,6 +1216,10 @@ return {
     }
     return out;
   },
+  /* Suspend the whole render loop while something opaque is over the top
+     of it (the intro film). Frees the GPU for video decode. */
+  setPaused(v){ paused = !!v; },
+  isPaused(){ return paused; },
   toggleQuality(){ applyQuality(quality === 'high' ? 'low' : 'high'); return quality; },
   getQuality(){ return quality; }
 };
