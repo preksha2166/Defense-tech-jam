@@ -12,6 +12,25 @@ uncertain. The game scores whether your reliance on it tracks the evidence.
 
 ---
 
+## Team
+
+Built by **Team 1 · Hackoholics** at the Defense Tech Jam, Seattle 2026.
+
+| | Role | Contribution |
+|---|---|---|
+| **[Chirag Patankar](https://www.linkedin.com/in/chiragpatankar/)** | Game development · Lead developer | Led core game development and implementation: gameplay systems, checkpoint and scenario logic, ATLAS's behaviour, sensor and evidence mechanics, interaction flow and the browser-based playable build. Worked with Raj on architecture, integration, debugging, testing and the final build. |
+| **[Raj Ranjit Yadav](https://www.linkedin.com/in/rajx463/)** | Developer · 3D, gameplay and technical integration | Gameplay implementation, 3D environment integration, interaction systems, technical polish, testing and performance. Connected the submarine exploration, sensor systems and checkpoint logic to the decision-making experience. |
+| **[Preksha Dewoolkar](https://www.linkedin.com/in/preksha-prashant-dewoolkar-2224512a/)** | Visuals · Music · Theme | Led the visual direction, music and overall theme: the underwater sci-fi identity, the HUD aesthetic, visual assets and game presentation, and the audio and music that set the mood. |
+| **[Purvesha Kolhe](https://www.linkedin.com/in/purvesha-kolhe)** | UI/UX and frontend · Content, audio and documentation | The player-facing UI and HUD, screen layouts, interaction flow, content and scenario integration, presentation assets and testing. Supported audio integration, and led the project documentation, game narrative, challenge framing and final deliverables. |
+
+Team-wide: ideation, playtesting, iteration, integration and the final
+presentation. See [TRUSTLINE-ABYSS-Team-Credits.pptx](TRUSTLINE-ABYSS-Team-Credits.pptx)
+and the [pitch deck](TRUSTLINE-ABYSS-Pitch-Deck.pptx).
+
+Originally developed in [ChiragPatankar/Defense-tech-jam](https://github.com/ChiragPatankar/Defense-tech-jam).
+
+---
+
 ## Running it
 
 **There is no build step and no dependencies to install.**
