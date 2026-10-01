@@ -346,6 +346,7 @@ function setView(){
 function onWaypoint(){
   if (!S.cp || S.cp.phase === 'decide') return;
   S.cp.phase = 'decide';
+  clearTimeout(S.cp.rescue);
   AUDIO.chime();
   atlasSay(scenario().atlas.recommendation);
   if (WORLD.clearClueSites) WORLD.clearClueSites();   // the leg is over
@@ -435,6 +436,18 @@ function drainPower(dt){
     S.cp.powerOut = true;
     if (WORLD.setPowerOut) WORLD.setPowerOut(true);
     AUDIO.alertCrit();
+
+    /* Failsafe. The autopilot homes on the checkpoint and converges from
+       any heading in under 30s, but being unable to finish a leg is the
+       one failure the player cannot work around — no thrust, no steering,
+       no menu. So guarantee arrival rather than trusting the steering. */
+    clearTimeout(S.cp.rescue);
+    S.cp.rescue = setTimeout(() => {
+      if (S && S.cp && S.cp.phase === 'transit'){
+        showPing('⚠ EMERGENCY BALLAST · SURFACING TO CHECKPOINT');
+        onWaypoint();
+      }
+    }, 45000);
     const missed = scenario().clues.length - S.cp.found.length;
     showPing(missed > 0
       ? `⚠ SCAN POWER EXHAUSTED · ${missed} CLUE${missed === 1 ? '' : 'S'} UNSCANNED · PROCEEDING`

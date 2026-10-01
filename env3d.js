@@ -855,7 +855,26 @@ function driveBoat(dt){
 
   if (BOAT.auto){
     BOAT.speed += (CRUISE - BOAT.speed) * dt * 1.2;
-    BOAT.pitch *= .985;
+
+    /* Home on the checkpoint rather than just going straight.
+       The autopilot used to hold whatever heading it was handed, which is
+       fine as an idle cruise but is a softlock once scan power runs out:
+       thrust is dead, the player cannot steer, and if the boat happened to
+       be pointing away from the waypoint it flew into the dark forever.
+       It is also what 'C' should obviously do. */
+    if (checkpoint && checkpoint.visible){
+      const rel = relBearingDeg(checkpoint.position.x - BOAT.pos.x,
+                                checkpoint.position.z - BOAT.pos.z);
+      // proportional, clamped: eases onto the bearing instead of sawing at it
+      const steer = Math.max(-1, Math.min(1, rel / 25));
+      BOAT.yaw -= steer * TURN * dt;              // +rel is starboard; yaw falls to turn starboard
+
+      const dy = checkpoint.position.y - BOAT.pos.y;
+      const wantPitch = Math.max(-.32, Math.min(.32, dy / 45));
+      BOAT.pitch += (wantPitch - BOAT.pitch) * dt * 1.6;
+    } else {
+      BOAT.pitch *= .985;
+    }
   } else {
     if (left)  BOAT.yaw += TURN * dt;
     if (right) BOAT.yaw -= TURN * dt;

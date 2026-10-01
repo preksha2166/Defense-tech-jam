@@ -16,3 +16,6 @@ desktop.ini
 # scratch
 _pdfpage*.png
 *.log
+
+# wrangler local cache (holds account id)
+.wrangler/
